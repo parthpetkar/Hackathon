@@ -1,0 +1,149 @@
+from flask import request, Response, current_app
+from twilio.twiml.voice_response import VoiceResponse, Gather, Say
+import threading
+
+from . import app, call_manager
+from .config import LanguageConfig
+from .utils import get_voice_response, error_response
+from .services.transcription import transcribe_audio
+from .services.n8n_integration import process_with_n8n
+
+@app.route("/voice", methods=["POST"])
+def voice():
+    """Initial language selection menu"""
+    resp = VoiceResponse()
+    gather = Gather(
+        num_digits=1,
+        action="/handle-language",
+        method="POST",
+        timeout=10
+    )
+    
+    # Use SSML for natural multi-language prompt
+    ssml_prompt = """
+    <speak>
+        <lang xml:lang="en-IN">For English, press 1.</lang>
+        <break time="300ms"/>
+        <lang xml:lang="hi-IN">हिंदी के लिए 2 दबाएं।</lang>
+        <break time="300ms"/>
+        <lang xml:lang="mr-IN">मराठी साठी 3 दबा.</lang>
+    </speak>
+    """
+    
+    say = Say(ssml_prompt)
+    gather.append(say)
+    resp.append(gather)
+    return Response(str(resp), mimetype="text/xml")
+
+@app.route("/handle-language", methods=["POST"])
+def handle_language():
+    """Handle language selection and record query"""
+    choice = request.form.get("Digits", "1")
+    language = LanguageConfig.LANGUAGE_MAP.get(choice, "English")
+    call_sid = request.form.get("CallSid")
+    
+    # Initialize call in manager
+    call_manager.init_call(call_sid, language)
+    
+    # Get language-specific prompt
+    prompt = LanguageConfig.PROMPTS[language]["selected"]
+    resp = get_voice_response(language, prompt)
+    resp.record(
+        max_length=60,
+        finish_on_key="#",
+        action="/process-recording",
+        play_beep=True,
+        timeout=5
+    )
+    return Response(str(resp), mimetype="text/xml")
+
+@app.route("/process-recording", methods=["POST"])
+def process_recording():
+    """Process audio recording and transcribe"""
+    call_sid = request.form.get("CallSid")
+    recording_url = request.form.get("RecordingUrl")
+    
+    if not recording_url or not call_sid:
+        return error_response(call_sid)
+    
+    # Transcribe audio
+    transcription = transcribe_audio(recording_url, call_sid)
+    if not transcription:
+        return error_response(call_sid)
+    
+    current_app.logger.info(f"Transcription for {call_sid}: {transcription}")
+    
+    # Start background processing
+    threading.Thread(
+        target=process_with_n8n,
+        args=(call_sid, transcription)
+    ).start()
+    
+    # Create response with periodic checks
+    language = call_manager.get_language(call_sid)
+    processing_text = LanguageConfig.PROMPTS[language]["processing"]
+    resp = get_voice_response(language, processing_text)
+    
+    # Check every 3 seconds for response
+    gather = Gather(
+        action=f"/check-response?call_sid={call_sid}",
+        method="POST",
+        timeout=3,
+        num_digits=1
+    )
+    resp.append(gather)
+    resp.redirect(f"/check-response?call_sid={call_sid}", method="POST")
+    
+    return Response(str(resp), mimetype="text/xml")
+
+@app.route("/check-response", methods=["POST"])
+def check_response():
+    """Check if n8n response is ready"""
+    call_sid = request.args.get("call_sid") or request.form.get("CallSid")
+    
+    if not call_sid or not call_manager.get_language(call_sid):
+        return error_response(call_sid)
+    
+    language = call_manager.get_language(call_sid)
+    response = call_manager.get_response(call_sid)
+    
+    resp = VoiceResponse()
+    
+    if not response:
+        # Still processing
+        still_processing = LanguageConfig.PROMPTS[language]["still_processing"]
+        resp = get_voice_response(language, still_processing)
+        gather = Gather(
+            action=f"/check-response?call_sid={call_sid}",
+            method="POST",
+            timeout=3,
+            num_digits=1
+        )
+        resp.append(gather)
+        resp.redirect(f"/check-response?call_sid={call_sid}", method="POST")
+    else:
+        # Response ready - play it
+        resp = get_voice_response(language, response)
+        goodbye_text = LanguageConfig.PROMPTS[language]["goodbye"]
+        from app.config import VoiceConfig
+        voice_cfg = VoiceConfig.get_voice_config(language)
+        resp.say(goodbye_text, voice=voice_cfg["voice"], language=voice_cfg["language"])
+        call_manager.cleanup_call(call_sid)
+    
+    return Response(str(resp), mimetype="text/xml")
+
+@app.route("/n8n-response", methods=["POST"])
+def n8n_webhook():
+    """
+    Endpoint to receive data from n8n workflow.
+    Expected JSON: {"call_sid": "<original_call_sid>", "output": "<message>"}
+    """
+    data = request.get_json(force=True)
+    call_sid = data.get("call_sid")
+    message = data.get("output", "").strip()
+    
+    if not call_sid or not message:
+        return {"error": "Missing parameters"}, 400
+    
+    call_manager.set_response(call_sid, message)
+    return {"status": "received", "call_sid": call_sid}, 200
