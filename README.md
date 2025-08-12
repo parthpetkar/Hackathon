@@ -1,3 +1,3 @@
 Architecture Diagram
 
-<img width="940" height="381" alt="image" src="https://github.com/user-attachments/assets/8547b8b4-de5d-4565-be9d-6d53889e1d9e" />
+<img width="1808" height="751" alt="image" src="https://github.com/user-attachments/assets/477803db-eab6-4687-a7d9-c0c9a2b03c03" />
