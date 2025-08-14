@@ -4,7 +4,7 @@ import threading
 
 from . import app, call_manager
 from .config import LanguageConfig
-from .utils import get_voice_response, error_response
+from .utils import get_voice_response, get_tts_response, get_tts_url, error_response
 from .services.transcription import transcribe_audio
 from .services.n8n_integration import process_with_n8n
 
@@ -19,19 +19,17 @@ def voice():
         timeout=10
     )
     
-    # Use SSML for natural multi-language prompt
-    ssml_prompt = """
-    <speak>
-        <lang xml:lang="en-IN">For English, press 1.</lang>
-        <break time="300ms"/>
-        <lang xml:lang="hi-IN">हिंदी के लिए 2 दबाएं।</lang>
-        <break time="300ms"/>
-        <lang xml:lang="mr-IN">मराठी साठी 3 दबा.</lang>
-    </speak>
-    """
-    
-    say = Say(ssml_prompt)
-    gather.append(say)
+    # Keep initial prompt short and in English for DTMF; Twilio Say supports SSML poorly across mixed languages.
+    multilingual_prompt = (
+        "For English, press 1. हिंदी के लिए 2 दबाएं. मराठी साठी 3 दबा."
+    )
+    media_url = get_tts_url("English", multilingual_prompt, cache=True, ephemeral=False)
+    if media_url:
+        gather.play(media_url)
+    else:
+        # Fallback to Say
+        say = Say(multilingual_prompt)
+        gather.append(say)
     resp.append(gather)
     return Response(str(resp), mimetype="text/xml")
 
@@ -47,7 +45,7 @@ def handle_language():
     
     # Get language-specific prompt
     prompt = LanguageConfig.PROMPTS[language]["selected"]
-    resp = get_voice_response(language, prompt)
+    resp = get_tts_response(language, prompt, cache=True, ephemeral=False)
     resp.record(
         max_length=60,
         finish_on_key="#",
@@ -82,7 +80,7 @@ def process_recording():
     # Create response with periodic checks
     language = call_manager.get_language(call_sid)
     processing_text = LanguageConfig.PROMPTS[language]["processing"]
-    resp = get_voice_response(language, processing_text)
+    resp = get_tts_response(language, processing_text, cache=True, ephemeral=False)
     
     # Check every 3 seconds for response
     gather = Gather(
@@ -112,7 +110,7 @@ def check_response():
     if not response:
         # Still processing
         still_processing = LanguageConfig.PROMPTS[language]["still_processing"]
-        resp = get_voice_response(language, still_processing)
+        resp = get_tts_response(language, still_processing)
         gather = Gather(
             action=f"/check-response?call_sid={call_sid}",
             method="POST",
@@ -122,12 +120,24 @@ def check_response():
         resp.append(gather)
         resp.redirect(f"/check-response?call_sid={call_sid}", method="POST")
     else:
-        # Response ready - play it
-        resp = get_voice_response(language, response)
+        # Response ready - first try to use pre-generated URLs if available
+        audio_url = call_manager.get_audio_url(call_sid)
+        if audio_url:
+            resp.play(audio_url)
+        else:
+            resp = get_tts_response(language, response, cache=False, ephemeral=True)
         goodbye_text = LanguageConfig.PROMPTS[language]["goodbye"]
-        from app.config import VoiceConfig
-        voice_cfg = VoiceConfig.get_voice_config(language)
-        resp.say(goodbye_text, voice=voice_cfg["voice"], language=voice_cfg["language"])
+        goodbye_url = call_manager.get_goodbye_url(call_sid)
+        if not goodbye_url:
+            # Use cached, pre-generated file for standard goodbye prompt
+            goodbye_url = get_tts_url(language, goodbye_text, cache=True, ephemeral=False)
+        if goodbye_url:
+            resp.play(goodbye_url)
+        else:
+            # Fallback to Say for goodbye
+            from app.config import VoiceConfig
+            voice_cfg = VoiceConfig.get_voice_config(language)
+            resp.say(goodbye_text, voice=voice_cfg["voice"], language=voice_cfg["language"])
         call_manager.cleanup_call(call_sid)
     
     return Response(str(resp), mimetype="text/xml")
@@ -145,5 +155,11 @@ def n8n_webhook():
     if not call_sid or not message:
         return {"error": "Missing parameters"}, 400
     
-    call_manager.set_response(call_sid, message)
+    # Pre-generate TTS files to avoid generation delays during TwiML response
+    language = call_manager.get_language(call_sid)
+    audio_url = get_tts_url(language, message, cache=False, ephemeral=True)
+    goodbye_text = LanguageConfig.PROMPTS[language]["goodbye"]
+    # Use cached, pre-generated file for standard goodbye prompt
+    goodbye_url = get_tts_url(language, goodbye_text, cache=True, ephemeral=False)
+    call_manager.set_response(call_sid, message, audio_url=audio_url, goodbye_url=goodbye_url)
     return {"status": "received", "call_sid": call_sid}, 200

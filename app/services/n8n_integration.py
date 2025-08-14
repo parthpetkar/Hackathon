@@ -1,7 +1,7 @@
 import os
 import requests
 import time
-from flask import current_app
+import logging
 from app.call_manager import call_manager
 
 def process_with_n8n(call_sid, transcription):
@@ -27,7 +27,7 @@ def process_with_n8n(call_sid, transcription):
         call_manager.set_response(call_sid, LanguageConfig.PROMPTS[language]["error"])
     
     except Exception as e:
-        current_app.logger.error(f"n8n processing error: {str(e)}")
+        logging.getLogger(__name__).error(f"n8n processing error: {str(e)}")
         language = call_manager.get_language(call_sid)
         from app.config import LanguageConfig
         call_manager.set_response(call_sid, LanguageConfig.PROMPTS[language]["error"])

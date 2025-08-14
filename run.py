@@ -30,8 +30,4 @@ except Exception as e:
     raise SystemExit(f"Error fetching ngrok URL: {e}")
 
 # Step 3: Run main.py with venv
-try:
-    subprocess.run([venv_python, "main.py"])
-finally:
-    # Step 4: Cleanup ngrok when script exits
-    ngrok_process.kill()
+subprocess.run([venv_python, "main.py"])
