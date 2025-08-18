@@ -26,6 +26,8 @@ Components:
 	- See: [whatsapp-service/README.md](whatsapp-service/README.md)
 	- Summary: create venv, configure Twilio account.
 
+1. For frontend mobile app refer - ![Flutter Frontend](https://github.com/OmkarLolage21/CapitalOneHackathonApp)
+
 ## Environment variables (at a glance)
 
 - Backend: `MISTRAL_API_KEY`, `MODEL_NAME`, Redis settings; optional `AGRO_API_KEY`, `DATA_GOV_API_KEY`.
