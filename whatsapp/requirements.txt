@@ -1,0 +1,5 @@
+twilio
+python-dotenv
+fastapi[standard]
+uvicorn
+httpx
