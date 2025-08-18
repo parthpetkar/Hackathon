@@ -15,21 +15,16 @@ Components:
 ## Quick start map
 
 1. Backend
-	- See: `backend/readme.MD`
+	- See: [backend/README.MD](backend/README.md)
 	- Summary: create venv; configure `.env`; `pip install -r requirements.txt`; run `uvicorn app:app --reload --host 0.0.0.0 --port 5000`.
 
 1. IVR service (Twilio phone)
-	- See: `ivr-service/README.md`
+	- See: [ivr-service/README.md](ivr-service/README.md)
 	- Summary: create venv; `pip install -r requirements.txt`; run `python run.py`; set your Twilio Voice webhook to `POST https://<ngrok>/voice`.
 
 1. WhatsApp service
-	- See: `whatsapp-service/README.md`
-
-## READMEs by component
-
-- Backend API: `backend/readme.MD`
-- IVR service: `ivr-service/README.md`
-- WhatsApp service: `whatsapp-service/README.md`
+	- See: [whatsapp-service/README.md](whatsapp-service/README.md)
+	- Summary: create venv, configure Twilio account.
 
 ## Environment variables (at a glance)
 
