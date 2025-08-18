@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import json
 from api.pipeline_selector import select_pipeline
 from .pipelines.common import run_pipeline
+from .pipelines.mandi import run_mandi_pipeline
 from config import config
 
 router = APIRouter()
@@ -32,7 +33,11 @@ async def response(payload: QueryRequest):
         # Decide pipeline using the pipeline vector retriever
         pipeline, sim = select_pipeline(question)
         # Run with the selected pipeline's prompt key (general/irrigation/etc.)
-        result = await run_pipeline(question, prompt_key=pipeline.prompt_key)
+        if pipeline.id == "mandi_advice":
+            # Extract filters from the query and run
+            result = await run_mandi_pipeline(question)
+        else:
+            result = await run_pipeline(question, prompt_key=pipeline.prompt_key)
         output_text = result.get("output") if isinstance(result, dict) else str(result)
 
         # Save interaction in Redis (non-fatal if it fails)

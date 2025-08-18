@@ -26,6 +26,12 @@ try:
     router.include_router(uv_router)
 except Exception:
     pass
+
+try:
+    from .mandi import router as mandi_router
+    router.include_router(mandi_router)
+except Exception:
+    pass
 from fastapi import APIRouter
 
 from .common import run_pipeline  # re-export for api dispatch

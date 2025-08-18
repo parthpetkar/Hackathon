@@ -1,27 +1,32 @@
 [
   {
     "id": "irrigation_advice",
-    "description": "Irrigation advice: queries about watering crops, soil moisture, water schedule, irrigation systems, drought, rainfall.",
+    "description": "Pipeline for irrigation and water management queries. Handles advice about watering crops, soil moisture interpretation, irrigation scheduling (days, mm of water), drought management, rainfall effects, and choosing irrigation systems (drip, sprinkler, canal, etc.). Helps farmers optimize water usage and reduce waste.",
     "prompt_key": "irrigation"
   },
   {
     "id": "general_assistant",
-    "description": "General assistant: chit-chat, general knowledge, or anything not covered by specialized pipelines.",
+    "description": "General-purpose assistant pipeline. Covers chit-chat, general knowledge, or any queries not directly related to agriculture. Provides helpful, concise answers without fabrication. Also handles fallback queries when no specialized pipeline applies.",
     "prompt_key": "general"
   },
   {
     "id": "weather_advice",
-    "description": "Weather and forecast queries: current weather, rain forecast, temperature trends, wind, storms, planning field work.",
-    "prompt_key": "irrigation"
+    "description": "Pipeline for weather-related queries. Handles questions about current weather, rainfall forecasts, temperature trends, wind speed, humidity, and storm alerts. Translates forecasts into actionable farm-level decisions like delaying irrigation, planning field work, or protecting crops.",
+    "prompt_key": "weather"
   },
   {
     "id": "soil_advice",
-    "description": "Soil and irrigation planning: soil moisture, soil temperature, watering schedule based on soil and weather.",
-    "prompt_key": "irrigation"
+    "description": "Pipeline for soil and crop-water planning queries. Covers soil moisture, soil temperature, soil type adjustments (clay, loam, sandy), and irrigation timing based on both soil and weather data. Advises on when and how much to irrigate, while flagging cases where more field data is required.",
+    "prompt_key": "soil"
   },
   {
     "id": "uv_advice",
-    "description": "UV index and sun exposure: safety, protection, sun intensity, outdoor work planning.",
-    "prompt_key": "general"
+    "description": "Pipeline for UV index and sun exposure queries. Provides safety guidance for farmers working outdoors, including UV index levels, safe working hours, protective measures (hat, sunscreen, long sleeves), and precautions for high-intensity periods. Links sun safety with farm tasks and health.",
+    "prompt_key": "uv"
+  },
+  {
+    "id": "mandi_advice",
+    "description": "Pipeline for mandi (market) and commodity price queries. Provides min, max, and modal prices of crops across markets, districts, and states. Advises on price trends, optimal selling locations, and timing for better profitability. Helps farmers make data-driven marketing decisions.",
+    "prompt_key": "mandi"
   }
 ]

@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Any
 import httpx
 
-from .common import run_pipeline
+from .common import run_pipeline, get_prompt_key_for_pipeline
 from config import config
 
 router = APIRouter()
@@ -37,9 +37,10 @@ async def fetch_weather_data(lat: float, lon: float) -> dict[str, Any]:
 @router.post("/pipeline/weather")
 async def pipeline_weather(payload: WeatherQuery):
     try:
+        prompt_key = get_prompt_key_for_pipeline("weather_advice", default="irrigation")
         result = await run_pipeline(
             payload.query,
-            prompt_key="irrigation",
+            prompt_key=prompt_key,
             external_fetcher=fetch_weather_data,
             fetcher_args={"lat": payload.lat, "lon": payload.lon},
         )

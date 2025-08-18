@@ -7,6 +7,25 @@ from ..retrieval import get_vector_store
 logger = logging.getLogger("pipelines.common")
 
 
+_PROMPT_KEY_CACHE: dict[str, str] | None = None
+
+
+def get_prompt_key_for_pipeline(pipeline_id: str, default: str = "general") -> str:
+    global _PROMPT_KEY_CACHE
+    if _PROMPT_KEY_CACHE is None:
+        try:
+            import os, json
+            # backend/routers -> backend/api/pipelines.json
+            routers_dir = os.path.dirname(os.path.dirname(__file__))
+            pipelines_path = os.path.normpath(os.path.join(routers_dir, "..", "api", "pipelines.json"))
+            with open(pipelines_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            _PROMPT_KEY_CACHE = {str(item.get("id")): str(item.get("prompt_key")) for item in data if item.get("id")}
+        except Exception:
+            _PROMPT_KEY_CACHE = {}
+    return _PROMPT_KEY_CACHE.get(pipeline_id, default)
+
+
 def summarize_external_data(external_data: dict[str, Any] | None) -> str:
     if not external_data:
         return "No external data available."
@@ -58,6 +77,31 @@ def summarize_external_data(external_data: dict[str, Any] | None) -> str:
             f"Temp(0cm): {external_data.get('t0')}, "
             f"Temp(10cm): {external_data.get('t10')}."
         )
+
+    # Mandi price summary (data.gov.in commodity prices)
+    mandi_records = external_data.get("mandi_records") if isinstance(external_data, dict) else None
+    if isinstance(mandi_records, list) and mandi_records:
+        max_items = 5
+        lines: list[str] = []
+        for rec in mandi_records[:max_items]:
+            market = rec.get("market") or rec.get("Market")
+            district = rec.get("district") or rec.get("District")
+            state = rec.get("state") or rec.get("State")
+            commodity = rec.get("commodity") or rec.get("Commodity")
+            variety = rec.get("variety") or rec.get("Variety")
+            grade = rec.get("grade") or rec.get("Grade")
+            modal = rec.get("modal_price") or rec.get("modal_price (Rs/quintal)") or rec.get("modal")
+            min_p = rec.get("min_price") or rec.get("min")
+            max_p = rec.get("max_price") or rec.get("max")
+            date = rec.get("arrival_date") or rec.get("date")
+            # Build a compact line
+            loc = ", ".join([p for p in [market, district, state] if p])
+            prod = " / ".join([p for p in [commodity, variety, grade] if p])
+            price = f"Modal {modal} (min {min_p}, max {max_p})" if modal or min_p or max_p else "Price N/A"
+            when = f" on {date}" if date else ""
+            lines.append(f"{loc} — {prod}: {price}{when}")
+        total = external_data.get("total") or len(mandi_records)
+        parts.append("Mandi Prices (sample):\n" + "\n".join(lines) + f"\nTotal records: {total}; showing {min(len(mandi_records), max_items)}")
 
     return "\n".join(parts) if parts else "No external data available."
 

@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import math
 
-from .common import run_pipeline
+from .common import run_pipeline, get_prompt_key_for_pipeline
 from config import config
 
 router = APIRouter()
@@ -79,9 +79,10 @@ async def fetch_uv_data(lat: float, lon: float) -> dict[str, Any]:
 @router.post("/pipeline/uv")
 async def pipeline_uv(payload: UvQuery):
     try:
+        prompt_key = get_prompt_key_for_pipeline("uv_advice", default="general")
         result = await run_pipeline(
             payload.query,
-            prompt_key="general",
+            prompt_key=prompt_key,
             external_fetcher=fetch_uv_data,
             fetcher_args={"lat": payload.lat, "lon": payload.lon},
         )

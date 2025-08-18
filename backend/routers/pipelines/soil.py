@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 import math
 
-from .common import run_pipeline
+from .common import run_pipeline, get_prompt_key_for_pipeline
 from config import config
 
 router = APIRouter()
@@ -83,9 +83,10 @@ async def fetch_soil_data(lat: float, lon: float) -> dict[str, Any]:
 @router.post("/pipeline/soil")
 async def pipeline_soil(payload: SoilQuery):
     try:
+        prompt_key = get_prompt_key_for_pipeline("soil_advice", default="irrigation")
         result = await run_pipeline(
             payload.query,
-            prompt_key="irrigation",
+            prompt_key=prompt_key,
             external_fetcher=fetch_soil_data,
             fetcher_args={"lat": payload.lat, "lon": payload.lon},
         )

@@ -60,21 +60,6 @@ def _cosine(a: List[float], b: List[float]) -> float:
         return float(sim_mat)
 
 
-def _redis_safe_get_hash(key: str, field: str) -> Optional[bytes]:
-    try:
-        return config.redis_client.hget(key, field)
-    except Exception as e:
-        logger.warning(f"Redis HGET failed: {e}")
-        return None
-
-
-def _redis_safe_hset(key: str, field: str, value: bytes) -> None:
-    try:
-        config.redis_client.hset(key, field, value)
-    except Exception as e:
-        logger.warning(f"Redis HSET failed: {e}")
-
-
 def _redis_safe_set(key: str, value: bytes) -> None:
     try:
         config.redis_client.set(key, value)
