@@ -1,22 +1,17 @@
 from fastapi import FastAPI
+import logging, os
 from routers.api import router as rag_router
 from routers.ingest import router as ingest_router
-from routers.pipelines.general import router as general_pipeline_router
-from routers.pipelines.weather import router as weather_pipeline_router
-from routers.pipelines.soil import router as soil_pipeline_router
-from routers.pipelines.uv import router as uv_pipeline_router
-from routers.pipelines.mandi import router as mandi_pipeline_router
 from api.pipeline_selector import ensure_pipeline_index
+
+# Configure basic logging; override with LOG_LEVEL env var
+_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, _level, logging.INFO), format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 
 app = FastAPI()
 # Expose routes without a prefix so paths are exactly "/response" and "/ingest"
 app.include_router(rag_router)
 app.include_router(ingest_router)
-app.include_router(general_pipeline_router)
-app.include_router(weather_pipeline_router)
-app.include_router(soil_pipeline_router)
-app.include_router(uv_pipeline_router)
-app.include_router(mandi_pipeline_router)
 
 
 @app.on_event("startup")

@@ -1,24 +1,14 @@
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 from typing import Any
 import httpx
 import math
 
-from .common import run_pipeline, get_prompt_key_for_pipeline
 from config import config
-
-router = APIRouter()
 logger = logging.getLogger("pipelines.soil")
 
 AGRO_SOIL_URL = "http://api.agromonitoring.com/agro/1.0/soil"
 AGRO_POLYGONS_URL = "http://api.agromonitoring.com/agro/1.0/polygons"
 
-
-class SoilQuery(BaseModel):
-    query: str = Field(...)
-    lat: float = Field(...)
-    lon: float = Field(...)
 
 
 def _square_polygon(lat: float, lon: float, radius_km: float = 5.0) -> list[list[float]]:
@@ -37,6 +27,7 @@ def _square_polygon(lat: float, lon: float, radius_km: float = 5.0) -> list[list
 
 
 async def _create_temp_polygon(lat: float, lon: float) -> str:
+    logger.debug("[soil] creating temp polygon for lat=%s lon=%s", lat, lon)
     coords = _square_polygon(lat, lon, radius_km=5.0)
     payload = {
         "name": f"temp-{lat:.5f},{lon:.5f}",
@@ -50,16 +41,18 @@ async def _create_temp_polygon(lat: float, lon: float) -> str:
         resp = await client.post(AGRO_POLYGONS_URL, params={"appid": config.AGRO_API_KEY}, json=payload)
         if resp.status_code not in (200, 201):
             logger.error(f"Create polygon failed: {resp.text}")
-            raise HTTPException(status_code=502, detail="Failed to create temp polygon")
+            raise RuntimeError("Failed to create temp polygon")
         data = resp.json()
         polyid = data.get("id") or data.get("_id")
         if not polyid:
-            raise HTTPException(status_code=502, detail="Polygon ID missing in response")
+            raise RuntimeError("Polygon ID missing in response")
+        logger.debug("[soil] created polygon id=%s", polyid)
         return str(polyid)
 
 
 async def _delete_polygon(polyid: str) -> None:
     try:
+        logger.debug("[soil] deleting polygon id=%s", polyid)
         async with httpx.AsyncClient(timeout=15) as client:
             await client.delete(f"{AGRO_POLYGONS_URL}/{polyid}", params={"appid": config.AGRO_API_KEY})
     except Exception:
@@ -67,6 +60,9 @@ async def _delete_polygon(polyid: str) -> None:
 
 
 async def fetch_soil_data(lat: float, lon: float) -> dict[str, Any]:
+    import time
+    start = time.monotonic()
+    logger.info("[soil] fetch start lat=%s lon=%s", lat, lon)
     polyid = await _create_temp_polygon(lat, lon)
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -74,24 +70,13 @@ async def fetch_soil_data(lat: float, lon: float) -> dict[str, Any]:
             soil_resp = await client.get(AGRO_SOIL_URL, params=params)
             if soil_resp.status_code != 200:
                 logger.error(f"Soil fetch failed: {soil_resp.text}")
-                raise HTTPException(status_code=502, detail="Failed to fetch soil data")
-            return soil_resp.json()
+                raise RuntimeError("Failed to fetch soil data")
+            data = soil_resp.json()
+            dur_ms = int((time.monotonic() - start) * 1000)
+            logger.info("[soil] fetch done in %d ms; keys=%s", dur_ms, ",".join(sorted(list(data.keys()))))
+            return data
     finally:
         await _delete_polygon(polyid)
 
 
-@router.post("/pipeline/soil")
-async def pipeline_soil(payload: SoilQuery):
-    try:
-        prompt_key = get_prompt_key_for_pipeline("soil_advice", default="irrigation")
-        result = await run_pipeline(
-            payload.query,
-            prompt_key=prompt_key,
-            external_fetcher=fetch_soil_data,
-            fetcher_args={"lat": payload.lat, "lon": payload.lon},
-        )
-        result["pipeline"] = "soil_advice"
-        return result
-    except Exception as e:
-        logger.exception("Soil pipeline failed")
-        raise HTTPException(status_code=500, detail=f"Soil pipeline failed: {str(e)}")
+__all__ = ["fetch_soil_data"]

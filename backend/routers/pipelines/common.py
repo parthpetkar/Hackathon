@@ -127,6 +127,7 @@ async def run_pipeline(
     retriever = vector_store.as_retriever(search_kwargs={"k": 4, "score_threshold": 0.6})
     docs = retriever.get_relevant_documents(question)
     docs_context = format_docs(docs)
+    logger.debug("Retrieved %d docs for single pipeline run", len(docs) if hasattr(docs, "__len__") else -1)
 
     # Step 3: build context (use summarized external data)
     external_text = summarize_external_data(external_data)
@@ -136,6 +137,55 @@ async def run_pipeline(
     prompt = get_prompt_template(prompt_key)
     answer = run_chain(prompt, {"context": full_context, "question": question})
 
+    return {
+        "output": answer,
+        "external_data": external_data,
+        "prompt_key": prompt_key,
+    }
+
+
+async def run_multi_pipeline(
+    question: str,
+    *,
+    prompt_key: str,
+    fetchers: list[tuple[Callable[..., Any], dict]]
+) -> dict:
+    """Run multiple external fetchers, merge their dict outputs, then a single LLM call.
+    - fetchers: list of (callable, args_dict)
+    """
+    import asyncio
+
+    import time
+    t0 = time.monotonic()
+    external_data: dict[str, Any] = {}
+    if fetchers:
+        logger.info("Running %d external fetchers", len(fetchers))
+        tasks = [f(**args) for f, args in fetchers]
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            logger.error("One or more external fetchers failed to start: %s", e)
+            results = []
+        for idx, res in enumerate(results):
+            if isinstance(res, Exception):
+                logger.error("Fetcher[%d] error: %s", idx, res)
+                continue
+            if isinstance(res, dict):
+                external_data.update(res)
+        logger.info("Merged external keys: %s", ",".join(sorted(list(external_data.keys()))))
+
+    vector_store = get_vector_store()
+    retriever = vector_store.as_retriever(search_kwargs={"k": 4, "score_threshold": 0.6})
+    docs = retriever.get_relevant_documents(question)
+    docs_context = format_docs(docs)
+    logger.info("Retrieved %d docs for multi-run", len(docs) if hasattr(docs, "__len__") else -1)
+
+    external_text = summarize_external_data(external_data)
+    full_context = f"External Data:\n{external_text}\n\nRelevant Docs:\n{docs_context}"
+    logger.debug("Built full context for multi-run (%d chars)", len(full_context))
+    prompt = get_prompt_template(prompt_key)
+    answer = run_chain(prompt, {"context": full_context, "question": question})
+    logger.info("Multi-run pipeline total time: %d ms", int((time.monotonic() - t0) * 1000))
     return {
         "output": answer,
         "external_data": external_data,

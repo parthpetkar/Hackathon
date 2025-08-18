@@ -1,51 +1,36 @@
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 from typing import Any
+
 import httpx
 
-from .common import run_pipeline, get_prompt_key_for_pipeline
 from config import config
 
-router = APIRouter()
 logger = logging.getLogger("pipelines.weather")
 
 AGRO_WEATHER_URL = "https://api.agromonitoring.com/agro/1.0/weather"
 AGRO_FORECAST_URL = "https://api.agromonitoring.com/agro/1.0/weather/forecast"
 
 
-class WeatherQuery(BaseModel):
-    query: str = Field(...) 
-    lat: float = Field(...)
-    lon: float = Field(...)
-
-
 async def fetch_weather_data(lat: float, lon: float) -> dict[str, Any]:
+    import time
+    start = time.monotonic()
+    logger.info("[weather] fetch start lat=%s lon=%s", lat, lon)
     async with httpx.AsyncClient(timeout=15) as client:
         params = {"lat": lat, "lon": lon, "appid": config.AGRO_API_KEY}
         weather = await client.get(AGRO_WEATHER_URL, params=params)
         if weather.status_code != 200:
-            logger.error(f"Weather fetch failed: {weather.text}")
-            raise HTTPException(status_code=502, detail="Failed to fetch weather data")
+            logger.error("Weather fetch failed: %s", weather.text)
+            raise RuntimeError("Failed to fetch weather data")
         forecast = await client.get(AGRO_FORECAST_URL, params=params)
         if forecast.status_code != 200:
-            logger.error(f"Forecast fetch failed: {forecast.text}")
-            raise HTTPException(status_code=502, detail="Failed to fetch forecast data")
-        return {"today_weather": weather.json(), "forecast": forecast.json()}
+            logger.error("Forecast fetch failed: %s", forecast.text)
+            raise RuntimeError("Failed to fetch forecast data")
+        wj = weather.json()
+        fj = forecast.json()
+        fcount = len(fj) if isinstance(fj, list) else (len(fj.get("list", [])) if isinstance(fj, dict) else 0)
+        dur_ms = int((time.monotonic() - start) * 1000)
+        logger.info("[weather] fetch done in %d ms (forecast items=%s)", dur_ms, fcount)
+        return {"today_weather": wj, "forecast": fj}
 
 
-@router.post("/pipeline/weather")
-async def pipeline_weather(payload: WeatherQuery):
-    try:
-        prompt_key = get_prompt_key_for_pipeline("weather_advice", default="irrigation")
-        result = await run_pipeline(
-            payload.query,
-            prompt_key=prompt_key,
-            external_fetcher=fetch_weather_data,
-            fetcher_args={"lat": payload.lat, "lon": payload.lon},
-        )
-        result["pipeline"] = "weather_advice"
-        return result
-    except Exception as e:
-        logger.exception("Weather pipeline failed")
-        raise HTTPException(status_code=500, detail=f"Weather pipeline failed: {str(e)}")
+__all__ = ["fetch_weather_data"]

@@ -1,6 +1,4 @@
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 from typing import Any, Optional
 import json
 import httpx
@@ -10,16 +8,16 @@ from api.common import run_chain
 from langchain.prompts import PromptTemplate
 from config import config
 
-router = APIRouter()
 logger = logging.getLogger("pipelines.mandi")
 
 DATA_GOV_RESOURCE_URL = "https://api.data.gov.in/resource/9ef84268-d588-465a-a308-a864a43d0070"
 
 
-class MandiQuery(BaseModel):
-    query: str = Field(...)
-    limit: int = Field(default=10, ge=1, le=100)
-    offset: int = Field(default=0, ge=0)
+__all__ = [
+    "fetch_mandi_data",
+    "run_mandi_pipeline",
+    "fetch_mandi_data_from_query",
+]
 
 
 async def fetch_mandi_data(
@@ -33,6 +31,12 @@ async def fetch_mandi_data(
     limit: int = 10,
     offset: int = 0,
 ) -> dict[str, Any]:
+    import time
+    start = time.monotonic()
+    logger.info(
+        "[mandi] fetch start state=%s district=%s market=%s commodity=%s variety=%s grade=%s limit=%s offset=%s",
+        state, district, market, commodity, variety, grade, limit, offset,
+    )
     api_key = config.DATA_GOV_API_KEY
     params: dict[str, Any] = {
         "api-key": api_key,
@@ -56,10 +60,12 @@ async def fetch_mandi_data(
         resp = await client.get(DATA_GOV_RESOURCE_URL, params=params)
         if resp.status_code != 200:
             logger.error(f"Mandi API failed: {resp.status_code} {resp.text}")
-            raise HTTPException(status_code=502, detail="Failed to fetch mandi prices")
+            raise RuntimeError("Failed to fetch mandi prices")
         data = resp.json()
         records = data.get("records") or []
         total = data.get("total") or len(records)
+        dur_ms = int((time.monotonic() - start) * 1000)
+        logger.info("[mandi] fetch done in %d ms; records=%d total=%d", dur_ms, len(records), total)
         return {"mandi_records": records, "total": total}
 
 
@@ -158,16 +164,35 @@ async def run_mandi_pipeline(question: str, *, default_limit: int = 10, default_
     )
 
 
-@router.post("/pipeline/mandi")
-async def pipeline_mandi(payload: MandiQuery):
-    try:
-        result = await run_mandi_pipeline(
-            payload.query,
-            default_limit=payload.limit,
-            default_offset=payload.offset,
-        )
-        result["pipeline"] = "mandi_advice"
-        return result
-    except Exception as e:
-        logger.exception("Mandi pipeline failed")
-        raise HTTPException(status_code=500, detail=f"Mandi pipeline failed: {str(e)}")
+async def fetch_mandi_data_from_query(question: str, *, default_limit: int = 10, default_offset: int = 0) -> dict[str, Any]:
+    import time
+    t0 = time.monotonic()
+    filters = _extract_filters_from_query(question)
+    logger.debug("[mandi] extracted filters from query: %s", filters)
+    def _clean_str(v):
+        if not isinstance(v, str):
+            return None
+        s = v.strip()
+        if not s or s.lower() in {"not specified", "na", "n/a", "none", "null", "-", "unknown"}:
+            return None
+        return s.title()
+    def _clean_int(v, default):
+        try:
+            return int(v)
+        except Exception:
+            return default
+    args = {
+        "state": _clean_str(filters.get("state")),
+        "district": _clean_str(filters.get("district")),
+        "market": _clean_str(filters.get("market")),
+        "commodity": _clean_str(filters.get("commodity")),
+        "variety": _clean_str(filters.get("variety")),
+        "grade": _clean_str(filters.get("grade")),
+        "limit": _clean_int(filters.get("limit"), default_limit),
+        "offset": _clean_int(filters.get("offset"), default_offset),
+    }
+    out = await fetch_mandi_data(**args)
+    logger.info("[mandi] end-to-end from query in %d ms", int((time.monotonic() - t0) * 1000))
+    return out
+
+

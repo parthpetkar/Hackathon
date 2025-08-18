@@ -4,9 +4,8 @@ import logging
 from typing import Optional
 from datetime import datetime, timezone
 import json
-from api.pipeline_selector import select_pipeline
-from .pipelines.common import run_pipeline
-from .pipelines.mandi import run_mandi_pipeline
+from api.pipeline_selector import plan_fetchers
+from .pipelines.common import run_multi_pipeline
 from config import config
 
 router = APIRouter()
@@ -17,6 +16,8 @@ class QueryRequest(BaseModel):
     transcription: Optional[str] = Field(default=None, description="Transcribed query text")
     query: Optional[str] = Field(default=None, description="Single query string")
     call_sid: str = Field(..., description="Unique Call SID for grouping history")
+    lat: Optional[float] = Field(default=None, description="Latitude (optional)")
+    lon: Optional[float] = Field(default=None, description="Longitude (optional)")
 
 
 # Pipeline endpoints live in routers/pipelines.py
@@ -30,15 +31,13 @@ async def response(payload: QueryRequest):
         raise HTTPException(status_code=400, detail="Provide 'transcription' or 'query'")
 
     try:
-        # Decide pipeline using the pipeline vector retriever
-        pipeline, sim = select_pipeline(question)
-        # Run with the selected pipeline's prompt key (general/irrigation/etc.)
-        if pipeline.id == "mandi_advice":
-            # Extract filters from the query and run
-            result = await run_mandi_pipeline(question)
-        else:
-            result = await run_pipeline(question, prompt_key=pipeline.prompt_key)
+        # Plan fetchers and prompt based on the query
+        fetchers, prompt_key, picked_ids = await plan_fetchers(question, body_lat=payload.lat, body_lon=payload.lon)
+        logger.info("Planned fetchers=%d picked=%s", len(fetchers), ",".join(picked_ids))
+        result = await run_multi_pipeline(question, prompt_key=prompt_key, fetchers=fetchers)
+        sim = 1.0
         output_text = result.get("output") if isinstance(result, dict) else str(result)
+        logger.info("Generated output length: %d chars", len(output_text or ""))
 
         # Save interaction in Redis (non-fatal if it fails)
         try:
@@ -46,14 +45,22 @@ async def response(payload: QueryRequest):
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "query": question,
                 "response": output_text,
-                "pipeline": pipeline.id,
                 "similarity": sim,
             }
+            if len(picked_ids) > 1:
+                rec["pipelines"] = picked_ids
+            else:
+                rec["pipeline"] = picked_ids[0] if picked_ids else "unknown"
             key = f"call:{payload.call_sid}:history"
             config.redis_client.lpush(key, json.dumps(rec).encode("utf-8"))
         except Exception as e:
-            logger.error(f"Redis save failed for {payload.call_sid}: {e}")
+            logger.error("Redis save failed for %s: %s", payload.call_sid, e)
 
-        return {"output": output_text, "pipeline": pipeline.id, "similarity": sim, "call_sid": payload.call_sid}
+        resp = {"output": output_text, "similarity": sim, "call_sid": payload.call_sid}
+        if len(picked_ids) > 1:
+            resp["pipelines"] = picked_ids
+        else:
+            resp["pipeline"] = picked_ids[0] if picked_ids else "unknown"
+        return resp
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"RAG failed: {str(e)}")

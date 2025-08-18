@@ -1,47 +1,18 @@
-from fastapi import APIRouter
+"""Pipelines package: fetch-only helpers for external data.
 
-# Aggregate sub-routers under a single router for easy inclusion in app.py
-router = APIRouter()
+No FastAPI routers are exposed. The orchestrator in routers/api.py plans
+fetchers via the pipeline selector and runs them through run_multi_pipeline.
+"""
 
-try:
-    from .general import router as general_router
-    router.include_router(general_router)
-except Exception:
-    pass
+from .weather import fetch_weather_data
+from .soil import fetch_soil_data
+from .uv import fetch_uv_data
+from .mandi import fetch_mandi_data, fetch_mandi_data_from_query
 
-try:
-    from .weather import router as weather_router
-    router.include_router(weather_router)
-except Exception:
-    pass
-
-try:
-    from .soil import router as soil_router
-    router.include_router(soil_router)
-except Exception:
-    pass
-
-try:
-    from .uv import router as uv_router
-    router.include_router(uv_router)
-except Exception:
-    pass
-
-try:
-    from .mandi import router as mandi_router
-    router.include_router(mandi_router)
-except Exception:
-    pass
-from fastapi import APIRouter
-
-from .common import run_pipeline  # re-export for api dispatch
-from .weather import router as weather_router
-from .soil import router as soil_router
-from .uv import router as uv_router
-
-router = APIRouter()
-router.include_router(weather_router)
-router.include_router(soil_router)
-router.include_router(uv_router)
-
-__all__ = ["router", "run_pipeline"]
+__all__ = [
+	"fetch_weather_data",
+	"fetch_soil_data",
+	"fetch_uv_data",
+	"fetch_mandi_data",
+	"fetch_mandi_data_from_query",
+]
