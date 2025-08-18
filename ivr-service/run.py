@@ -18,7 +18,12 @@ ngrok_process = subprocess.Popen(
 time.sleep(3)  # wait for ngrok to initialize
 try:
     tunnels = requests.get("http://127.0.0.1:4040/api/tunnels").json()
-    public_url = tunnels['tunnels'][0]['public_url']
+    # Prefer HTTPS public URL for Twilio; fallback to first
+    tunnel_list = tunnels.get('tunnels', [])
+    https_tunnel = next((t for t in tunnel_list if t.get('public_url', '').startswith('https')), None)
+    public_url = (https_tunnel or (tunnel_list[0] if tunnel_list else {})).get('public_url')
+    if not public_url:
+        raise RuntimeError("No ngrok public URL found")
     print(f"Ngrok public URL: {public_url}")
 
     # Save URL to file so make_call.py can read it

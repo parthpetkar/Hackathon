@@ -10,7 +10,7 @@ try:
     with open("ngrok_url.txt", "r") as f:
         public_url = f.read().strip()
 except FileNotFoundError:
-    raise SystemExit("Error: ngrok_url.txt not found. Run start_server.py first.")
+    raise SystemExit("Error: ngrok_url.txt not found. Run run.py first to start ngrok and the server.")
 
 print(f"Using ngrok URL: {public_url}")
 

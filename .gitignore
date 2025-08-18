@@ -1,4 +1,4 @@
-/.env
+.env
 /venv
 __pycache__/
 ngrok_url.txt
