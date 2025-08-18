@@ -30,3 +30,7 @@ def get_vector_store():
             logger.error(f"Vector store connection failed: {str(e)}")
             raise RuntimeError("Vector store unavailable")
     return _vector_store
+
+def get_embeddings():
+    """Expose the shared embedding model for other services to reuse."""
+    return _embeddings

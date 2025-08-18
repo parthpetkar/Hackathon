@@ -1,0 +1,27 @@
+[
+  {
+    "id": "irrigation_advice",
+    "description": "Irrigation advice: queries about watering crops, soil moisture, water schedule, irrigation systems, drought, rainfall.",
+    "prompt_key": "irrigation"
+  },
+  {
+    "id": "general_assistant",
+    "description": "General assistant: chit-chat, general knowledge, or anything not covered by specialized pipelines.",
+    "prompt_key": "general"
+  },
+  {
+    "id": "weather_advice",
+    "description": "Weather and forecast queries: current weather, rain forecast, temperature trends, wind, storms, planning field work.",
+    "prompt_key": "irrigation"
+  },
+  {
+    "id": "soil_advice",
+    "description": "Soil and irrigation planning: soil moisture, soil temperature, watering schedule based on soil and weather.",
+    "prompt_key": "irrigation"
+  },
+  {
+    "id": "uv_advice",
+    "description": "UV index and sun exposure: safety, protection, sun intensity, outdoor work planning.",
+    "prompt_key": "general"
+  }
+]

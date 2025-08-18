@@ -27,24 +27,42 @@ def run_chain(prompt_template, inputs):
     return chain.invoke(inputs)
 
 def get_prompt_template(use_case: str) -> PromptTemplate:
-    if use_case == "generation":
+    if use_case == "irrigation":
         return PromptTemplate(
             input_variables=["context", "question"],
             template="""
-            [INST] You are an expert assistant for policy analysis and compliance. 
-            Answer ONLY using the provided context. If information is missing, state so.
-            
+            [INST] You are an agronomy and irrigation advisor. Provide practical guidance on crop watering, soil moisture, irrigation systems, schedules, and weather impacts.
+            Use ONLY the provided context. If context lacks details, say what else is needed.
+
             Context:
             {context}
-            
+
+            Farmer's question:
+            {question}
+
+            Guidelines:
+            - Prefer concise steps and clear thresholds (e.g., moisture %, mm of water)
+            - Reference any field data or rules found in the context
+            - If safety or compliance is relevant, highlight it
+            - Avoid speculation; ask for missing data if necessary [/INST]
+            """
+        )
+    if use_case == "general":
+        return PromptTemplate(
+            input_variables=["context", "question"],
+            template="""
+            [INST] You are a helpful general assistant. If the context is empty or irrelevant, answer succinctly from general knowledge, and note when the context doesn't apply.
+
+            Context (may be empty):
+            {context}
+
             Question:
             {question}
 
             Guidelines:
-            1. Be precise and professional
-            2. Use bullet points for complex answers
-            3. Never hallucinate information
-            4. Reference section numbers when available [/INST]
+            - Be concise and correct
+            - If specialized domain knowledge is needed, say so
+            - If no context is available, do not fabricate citations [/INST]
             """
         )
     raise ValueError("Invalid use case")
