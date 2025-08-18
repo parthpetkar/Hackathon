@@ -10,11 +10,11 @@ Components:
 
 ## Architecture
 
-![architecture](https://github.com/user-attachments/assets/477803db-eab6-4687-a7d9-c0c9a2b03c03)
+![SystemArch](https://github.com/user-attachments/assets/7a710ace-5011-4cec-bcad-77fa0420f15e)
 
 ## Quick start map
 
-1. Backend (required)
+1. Backend
 	- See: `backend/readme.MD`
 	- Summary: create venv; configure `.env`; `pip install -r requirements.txt`; run `uvicorn app:app --reload --host 0.0.0.0 --port 5000`.
 
@@ -22,7 +22,7 @@ Components:
 	- See: `ivr-service/README.md`
 	- Summary: create venv; `pip install -r requirements.txt`; run `python run.py`; set your Twilio Voice webhook to `POST https://<ngrok>/voice`.
 
-1. WhatsApp service (optional)
+1. WhatsApp service
 	- See: `whatsapp-service/README.md`
 
 ## READMEs by component
