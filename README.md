@@ -15,7 +15,7 @@ Components:
 ## Quick start map
 
 1. Backend
-	- See: [backend/README.MD](backend/README.md)
+	- See: [backend/README.md](backend/README.MD)
 	- Summary: create venv; configure `.env`; `pip install -r requirements.txt`; run `uvicorn app:app --reload --host 0.0.0.0 --port 5000`.
 
 1. IVR service (Twilio phone)
