@@ -42,6 +42,18 @@ def handle_language():
     
     # Initialize call in manager
     call_manager.init_call(call_sid, language)
+    # Try to store location if Twilio sent it
+    lat = request.form.get("CallerLatitude") or request.form.get("Latitude")
+    lon = request.form.get("CallerLongitude") or request.form.get("Longitude")
+    if lat and lon:
+        call_manager.set_location(call_sid, lat, lon)
+    # Save region hint if provided by Twilio
+    from_city = request.form.get("FromCity")
+    from_state = request.form.get("FromState")
+    from_country = request.form.get("FromCountry")
+    region_hint = ", ".join([x for x in [from_city, from_state, from_country] if x]) or None
+    if region_hint:
+        call_manager.set_region(call_sid, region_hint)
     
     # Get language-specific prompt
     prompt = LanguageConfig.PROMPTS[language]["selected"]
@@ -71,7 +83,20 @@ def process_recording():
     
     current_app.logger.info(f"Transcription for {call_sid}: {transcription}")
     
-    # Start background processing
+    # Ensure we have location if provided in this callback
+    lat = request.form.get("CallerLatitude") or request.form.get("Latitude")
+    lon = request.form.get("CallerLongitude") or request.form.get("Longitude")
+    if lat and lon:
+        call_manager.set_location(call_sid, lat, lon)
+    # Update region hint if present in this callback
+    from_city = request.form.get("FromCity")
+    from_state = request.form.get("FromState")
+    from_country = request.form.get("FromCountry")
+    region_hint = ", ".join([x for x in [from_city, from_state, from_country] if x]) or None
+    if region_hint:
+        call_manager.set_region(call_sid, region_hint)
+
+    # Start background processing via backend
     threading.Thread(
         target=process_with_n8n,
         args=(call_sid, transcription)

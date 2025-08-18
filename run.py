@@ -9,7 +9,7 @@ venv_python = os.path.join("venv", "Scripts", "python.exe")
 # Step 1: Start ngrok silently
 print("Starting ngrok...")
 ngrok_process = subprocess.Popen(
-    ["ngrok", "http", "5000"],
+    ["ngrok", "http", "5050"],
     stdout=subprocess.DEVNULL,
     stderr=subprocess.DEVNULL
 )

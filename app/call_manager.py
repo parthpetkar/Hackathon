@@ -13,8 +13,40 @@ class CallManager:
             'status': 'processing',
             'response': None,
             'audio_url': None,
-            'goodbye_url': None
+            'goodbye_url': None,
+            'lat': None,
+            'lon': None,
+            'region': None,
         }
+
+    def set_location(self, call_sid, lat, lon):
+        """Store latitude/longitude for a call if available"""
+        call = self.active_calls.get(call_sid)
+        if call is not None:
+            try:
+                call['lat'] = float(lat) if lat is not None else None
+                call['lon'] = float(lon) if lon is not None else None
+            except Exception:
+                # Ignore bad coords
+                call['lat'] = None
+                call['lon'] = None
+
+    def get_location(self, call_sid):
+        call = self.active_calls.get(call_sid)
+        if call:
+            return call.get('lat'), call.get('lon')
+        return None, None
+
+    def set_region(self, call_sid, region: str | None):
+        call = self.active_calls.get(call_sid)
+        if call is not None and region:
+            call['region'] = region
+
+    def get_region(self, call_sid):
+        call = self.active_calls.get(call_sid)
+        if call:
+            return call.get('region')
+        return None
     
     def set_response(self, call_sid, response, audio_url=None, goodbye_url=None):
         """Store response from n8n workflow"""

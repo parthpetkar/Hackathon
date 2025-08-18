@@ -18,6 +18,7 @@ class QueryRequest(BaseModel):
     call_sid: str = Field(..., description="Unique Call SID for grouping history")
     lat: Optional[float] = Field(default=None, description="Latitude (optional)")
     lon: Optional[float] = Field(default=None, description="Longitude (optional)")
+    region: Optional[str] = Field(default=None, description="Region hint (city/state/country)")
 
 
 # Pipeline endpoints live in routers/pipelines.py

@@ -267,6 +267,12 @@ async def plan_fetchers(query: str, body_lat: Optional[float] = None, body_lon: 
                     source = source or "regex"
             except Exception:
                 pass
+    # If still missing but a location-based pipeline is selected, use hardcoded defaults
+    needs_coords = any(pid in ("weather_advice", "soil_advice", "uv_advice", "irrigation_advice") for pid in picked_ids)
+    if (lat is None or lon is None) and needs_coords:
+        lat = 18.3677
+        lon = 73.77395
+        source = source or "default"
     logger.info("Planner coords -> lat=%s lon=%s (source=%s)", lat, lon, source)
 
     fetchers: List[Tuple] = []
