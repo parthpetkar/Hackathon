@@ -15,7 +15,7 @@ class Config:
     PIPELINE_INDEX_NAME = os.getenv("PIPELINE_INDEX_NAME", "pipeline_vectors")
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
     MODEL_NAME = os.getenv("MODEL_NAME")
-    # OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+    OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
     AGRO_API_KEY = os.getenv("AGRO_API_KEY")
     DATA_GOV_API_KEY = os.getenv("DATA_GOV_API_KEY")
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"

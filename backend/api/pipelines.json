@@ -1,7 +1,7 @@
 [
   {
     "id": "general_assistant",
-    "description": "General-purpose assistant pipeline. Covers chit-chat, general knowledge, or any queries not directly related to agriculture. Provides helpful, concise answers without fabrication. Also handles fallback queries when no specialized pipeline applies.",
+    "description": "General-purpose assistant pipeline related to agriculture. Provides helpful, concise answers without fabrication. Also handles fallback queries when no specialized pipeline applies.",
     "prompt_key": "general"
   },
   {
@@ -15,13 +15,13 @@
     "prompt_key": "soil"
   },
   {
-    "id": "uv_advice",
-    "description": "Pipeline for UV index and sun exposure queries. Provides safety guidance for farmers working outdoors, including UV index levels, safe working hours, protective measures (hat, sunscreen, long sleeves), and precautions for high-intensity periods. Links sun safety with farm tasks and health.",
-    "prompt_key": "uv"
-  },
-  {
     "id": "mandi_advice",
     "description": "Pipeline for mandi (market) and commodity price queries. Provides min, max, and modal prices of crops across markets, districts, and states. Advises on price trends, optimal selling locations, and timing for better profitability. Helps farmers make data-driven marketing decisions.",
     "prompt_key": "mandi"
+  },
+  {
+    "id": "irrigation_advice",
+    "description": "Provides advice on irrigation based on weather and soil data.",
+    "prompt_key": "irrigation"
   }
 ]

@@ -32,14 +32,16 @@ def summarize_external_data(external_data: dict[str, Any] | None) -> str:
 
     parts: list[str] = []
 
-    # Weather summary
+    # Weather summary (metric units if available)
     if "today_weather" in external_data:
         w = external_data["today_weather"] or {}
+        temp = w.get("main", {}).get("temp")
+        hum = w.get("main", {}).get("humidity")
+        clouds = (w.get("clouds", {}) or {}).get("all")
+        wind = (w.get("wind", {}) or {}).get("speed")
+        # OpenWeather units are metric when requested; prefer °C and m/s
         parts.append(
-            f"Current Weather → Temp: {w.get('main', {}).get('temp')}K, "
-            f"Humidity: {w.get('main', {}).get('humidity')}%, "
-            f"Clouds: {w.get('clouds', {}).get('all')}%, "
-            f"Wind: {w.get('wind', {}).get('speed')} m/s."
+            f"Current Weather → Temp: {temp}°C, Humidity: {hum}%, Clouds: {clouds}%, Wind: {wind} m/s."
         )
 
     # Forecast summary (optional shape: list of entries with 'dt','main','rain')
@@ -54,9 +56,20 @@ def summarize_external_data(external_data: dict[str, Any] | None) -> str:
                     continue
                 day = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
                 main = entry.get("main", {})
-                rain = (entry.get("rain", {}) or {}).get("3h", 0)
+                # OpenWeather daily 16 endpoint shape has entry.temp {min,max,day}
+                temp_block = entry.get("temp") or {}
+                if temp_block and not main:
+                    # Map to main-like fields for summarization
+                    main = {"temp_min": temp_block.get("min"), "temp_max": temp_block.get("max"), "temp": temp_block.get("day")}
+                rain_field = entry.get("rain")
+                if isinstance(rain_field, dict):
+                    rain = (rain_field or {}).get("3h", 0)
+                elif isinstance(rain_field, (int, float)):
+                    rain = rain_field
+                else:
+                    rain = 0
                 forecast_days.setdefault(day, {"temps": [], "rain_total": 0})
-                forecast_days[day]["temps"].append(main.get("temp"))
+                forecast_days[day]["temps"].append(main.get("temp") or temp_block.get("day"))
                 forecast_days[day]["rain_total"] += rain
 
             compact: list[str] = []
@@ -64,19 +77,49 @@ def summarize_external_data(external_data: dict[str, Any] | None) -> str:
                 temps = [t for t in vals["temps"] if t is not None]
                 tmin = min(temps) if temps else None
                 tmax = max(temps) if temps else None
-                compact.append(f"{day}: Tmin={tmin}K, Tmax={tmax}K, Rain={vals['rain_total']}mm")
+                compact.append(f"{day}: Tmin={tmin}°C, Tmax={tmax}°C, Rain={vals['rain_total']}mm")
             if compact:
                 parts.append("Forecast (next days): " + "; ".join(compact))
         except Exception:
             pass
 
-    # Soil summary (Agro soil fields)
-    if any(k in external_data for k in ("t0", "moisture")):
-        parts.append(
-            f"Soil → Moisture: {external_data.get('moisture')}, "
-            f"Temp(0cm): {external_data.get('t0')}, "
-            f"Temp(10cm): {external_data.get('t10')}."
-        )
+    # Climate 30-day summary (if available from OpenWeather)
+    c30 = external_data.get("climate_30d") if isinstance(external_data, dict) else None
+    try:
+        if c30:
+            lst = c30.get("list", c30 if isinstance(c30, list) else [])
+            if isinstance(lst, list) and lst:
+                # Summarize first few days
+                out = []
+                for it in lst[:5]:
+                    # Try daily-like shape with temp averages
+                    dt = it.get("dt") or it.get("time")
+                    main = it.get("temp") or it.get("main") or {}
+                    tmin = main.get("min") or main.get("temp_min")
+                    tmax = main.get("max") or main.get("temp_max")
+                    if dt and (tmin is not None or tmax is not None):
+                        from datetime import datetime
+                        day = datetime.utcfromtimestamp(dt).strftime("%Y-%m-%d") if isinstance(dt, (int, float)) else str(dt)
+                        out.append(f"{day}: Tmin={tmin}°C Tmax={tmax}°C")
+                if out:
+                    parts.append("Climate outlook (30d sample): " + "; ".join(out))
+    except Exception:
+        pass
+
+    # Soil summary (data.gov.in soil moisture records)
+    soil_records = external_data.get("soil_records") if isinstance(external_data, dict) else None
+    if isinstance(soil_records, list) and soil_records:
+        lines: list[str] = []
+        for rec in soil_records[:5]:
+            st = rec.get("State")
+            dist = rec.get("District")
+            date = rec.get("Date")
+            sm = rec.get("Avg_smlvl_at15cm")
+            agency = rec.get("Agency_name")
+            loc = ", ".join([p for p in [dist, st] if p])
+            lines.append(f"{date} — {loc}: Soil moisture at 15cm = {sm} (agency: {agency})")
+        total = external_data.get("total") or len(soil_records)
+        parts.append("Soil moisture (sample):\n" + "\n".join(lines) + f"\nTotal records: {total}; showing {min(len(soil_records), 5)}")
 
     # Mandi price summary (data.gov.in commodity prices)
     mandi_records = external_data.get("mandi_records") if isinstance(external_data, dict) else None

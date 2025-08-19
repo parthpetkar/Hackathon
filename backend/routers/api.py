@@ -16,9 +16,6 @@ class QueryRequest(BaseModel):
     transcription: Optional[str] = Field(default=None, description="Transcribed query text")
     query: Optional[str] = Field(default=None, description="Single query string")
     call_sid: str = Field(..., description="Unique Call SID for grouping history")
-    lat: Optional[float] = Field(default=None, description="Latitude (optional)")
-    lon: Optional[float] = Field(default=None, description="Longitude (optional)")
-    region: Optional[str] = Field(default=None, description="Region hint (city/state/country)")
 
 
 # Pipeline endpoints live in routers/pipelines.py
@@ -33,7 +30,7 @@ async def response(payload: QueryRequest):
 
     try:
         # Plan fetchers and prompt based on the query
-        fetchers, prompt_key, picked_ids = await plan_fetchers(question, body_lat=payload.lat, body_lon=payload.lon)
+        fetchers, prompt_key, picked_ids = await plan_fetchers(question)
         logger.info("Planned fetchers=%d picked=%s", len(fetchers), ",".join(picked_ids))
         result = await run_multi_pipeline(question, prompt_key=prompt_key, fetchers=fetchers)
         sim = 1.0

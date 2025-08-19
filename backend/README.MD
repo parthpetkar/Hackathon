@@ -11,7 +11,8 @@ This backend powers the IVR responses. It exposes two endpoints:
 - Redis server running and reachable (defaults to `localhost:6379`)
 - API keys for services you intend to use:
     - Mistral: `MISTRAL_API_KEY` (required for LLM and OCR)
-    - Agromonitoring: `AGRO_API_KEY` (weather/soil/uv)
+    - OpenWeather: `OPENWEATHER_API_KEY` (current weather, 16-day forecast, 30-day climate)
+    - Agromonitoring: `AGRO_API_KEY` (soil/uv)
     - data.gov.in: `DATA_GOV_API_KEY` (mandi prices)
 
 Note on PyTorch: `config.py` imports `torch` to detect GPU. If you don’t have PyTorch installed, install a CPU build or CUDA build compatible with your system. Example (CPU only):
@@ -42,6 +43,7 @@ Required (typical):
 Optional:
 
 - `AGRO_API_KEY`, `DATA_GOV_API_KEY`, `GPU_ENABLED` (true/false), `PIPELINE_INDEX_NAME`
+- `OPENWEATHER_API_KEY` for weather features
 
 Example `.env`:
 
@@ -55,6 +57,7 @@ MODEL_NAME=mistral-large-latest
 
 # Optional
 GPU_ENABLED=true
+OPENWEATHER_API_KEY=your_openweather_key
 AGRO_API_KEY=your_agromonitoring_key
 DATA_GOV_API_KEY=your_datagov_key
 ```
@@ -79,7 +82,7 @@ The IVR service expects the backend at <http://localhost:5000>.
 
 ### POST /response
 
-Generates an answer based on the query, optional location (lat/lon or region), and retrieved docs.
+Generates an answer based on the query, optional location (lat/lon or region), and retrieved docs. Weather answers use OpenWeather (current, 16-day daily, and 30-day climate when available). If `region` or a location mention is present in the query, the service geocodes it (OpenWeather Geo API with Nominatim fallback) to get lat/lon.
 
 Body (JSON):
 

@@ -16,7 +16,6 @@ from langchain.prompts import PromptTemplate
 from api.common import run_chain
 from routers.pipelines.weather import fetch_weather_data
 from routers.pipelines.soil import fetch_soil_data
-from routers.pipelines.uv import fetch_uv_data
 from routers.pipelines.mandi import fetch_mandi_data_from_query
 import httpx
 
@@ -70,19 +69,7 @@ def ensure_pipeline_index() -> None:
         logger.error("Failed to ensure pipeline index: %s", e)
 
 
-def _routing_prompt() -> PromptTemplate:
-    return PromptTemplate(
-        input_variables=["pipelines", "question"],
-        template=(
-            "You are an expert router that maps a user query to the best pipeline.\n"
-            "You are given a list of pipelines as JSON objects with fields: id, description, prompt_key.\n"
-            "Choose exactly ONE pipeline id that best fits the query intent.\n"
-            "Respond ONLY with a JSON object of the form:\n"
-            "{{\n  \"pipeline_id\": \"<one of the ids listed>\",\n  \"reason\": \"short rationale\"\n}}\n\n"
-            "Pipelines:\n{pipelines}\n\n"
-            "Query:\n{question}"
-        ),
-    )
+# Removed single-pipeline routing; only multi-routing is supported.
 
 
 def _multi_routing_prompt() -> PromptTemplate:
@@ -122,54 +109,13 @@ def select_pipelines(query: str) -> List[PipelineDef]:
                 logger.info("Selected pipelines: %s", ", ".join([p.id for p in picked]))
                 return picked
     except Exception:
-        logger.warning("Failed to parse multi-route output; falling back to single route")
-    # Fallback to single route
-    single, _ = select_pipeline(query)
-    logger.info("Fallback selected pipeline: %s", single.id)
-    return [single]
+        logger.warning("Failed to parse multi-route output; using default pipeline")
+    # Fallback to default (first) pipeline without single-route LLM
+    logger.info("Fallback selected pipeline: %s", pipelines[0].id)
+    return [pipelines[0]]
 
 
-def _safe_json_find_id(text: str, valid_ids: List[str]) -> Optional[str]:
-    # Try strict JSON parse
-    try:
-        obj = json.loads(text)
-        if isinstance(obj, dict):
-            pid = obj.get("pipeline_id") or obj.get("id")
-            if isinstance(pid, str) and pid in valid_ids:
-                return pid
-    except Exception:
-        pass
-    # Fallback: scan for any valid id token appearance
-    for pid in valid_ids:
-        if pid in text:
-            return pid
-    return None
-
-
-def select_pipeline(query: str) -> Tuple[PipelineDef, float]:
-    pipelines = load_pipelines()
-    if not pipelines:
-        raise RuntimeError("No pipelines loaded. Ensure pipelines.json is configured.")
-    if not query:
-        return pipelines[-1], 0.0
-
-    plist = [
-        {"id": p.id, "description": p.description, "prompt_key": p.prompt_key}
-        for p in pipelines
-    ]
-    prompt = _routing_prompt()
-    logger.info("Routing single pipeline for query: %s", query)
-    llm_out = run_chain(prompt, {"pipelines": json.dumps(plist, ensure_ascii=False), "question": query})
-    logger.debug("Single-route LLM output: %s", llm_out)
-
-    valid_ids = [p.id for p in pipelines]
-    chosen_id = _safe_json_find_id(llm_out, valid_ids)
-    id_to_def: Dict[str, PipelineDef] = {p.id: p for p in pipelines}
-    chosen = id_to_def.get(chosen_id or "", pipelines[-1])
-    logger.info("Selected pipeline: %s", chosen.id)
-
-    # Return a nominal confidence of 1.0 for LLM routing
-    return chosen, 1.0
+# Single-pipeline routing removed.
 
 
 def _latlon_extraction_prompt() -> PromptTemplate:
@@ -192,31 +138,71 @@ def _region_extraction_prompt() -> PromptTemplate:
     )
 
 
+def _soil_city_state_prompt() -> PromptTemplate:
+    return PromptTemplate(
+        input_variables=["q"],
+        template=(
+            "Extract the city and state from the user's query if present. "
+            "Return ONLY valid JSON with keys: city, state (title case strings or null).\n"
+            "{\n  \"city\": <string|null>,\n  \"state\": <string|null>\n}\n\nQuery: {q}"
+        ),
+    )
+
+
 async def _geocode_region(name: str) -> Tuple[Optional[float], Optional[float]]:
+    """Geocode a freeform region string using OpenWeather Geo API first, then Nominatim as fallback."""
+    q = (name or "").strip()
+    if not q:
+        return None, None
+    # Try OpenWeather direct geocoding
+    try:
+        if config.OPENWEATHER_API_KEY:
+            async with httpx.AsyncClient(timeout=10) as client:
+                # OWM Geo API: q can be "city,state,country"
+                params = {"q": q, "limit": 1, "appid": config.OPENWEATHER_API_KEY}
+                resp = await client.get("https://api.openweathermap.org/geo/1.0/direct", params=params)
+                if resp.status_code == 200:
+                    arr = resp.json()
+                    if isinstance(arr, list) and arr:
+                        it = arr[0]
+                        lat = it.get("lat")
+                        lon = it.get("lon")
+                        if lat is not None and lon is not None:
+                            return float(lat), float(lon)
+                else:
+                    logger.info("OWM geocode failed: %s", resp.text)
+    except Exception as e:
+        logger.info("OWM geocode exception: %s", e)
+    # Fallback: Nominatim
     try:
         headers = {"User-Agent": "captial-one-agri-app/1.0"}
-        params = {"q": name, "format": "json", "limit": 1}
+        params = {"q": q, "format": "json", "limit": 1}
         async with httpx.AsyncClient(timeout=10, headers=headers) as client:
             resp = await client.get("https://nominatim.openstreetmap.org/search", params=params)
-            if resp.status_code != 200:
-                logger.warning("Geocode failed: %s", resp.text)
-                return None, None
-            data = resp.json()
-            if isinstance(data, list) and data:
-                item = data[0]
-                lat = float(item.get("lat"))
-                lon = float(item.get("lon"))
-                return lat, lon
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    item = data[0]
+                    lat = float(item.get("lat"))
+                    lon = float(item.get("lon"))
+                    return lat, lon
+            else:
+                logger.warning("Nominatim geocode failed: %s", resp.text)
     except Exception as e:
-        logger.warning("Geocode exception: %s", e)
+        logger.warning("Nominatim geocode exception: %s", e)
     return None, None
 
 
-async def plan_fetchers(query: str, body_lat: Optional[float] = None, body_lon: Optional[float] = None) -> Tuple[List[Tuple], str, List[str]]:
+async def plan_fetchers(query: str, body_lat: Optional[float] = None, body_lon: Optional[float] = None, body_region: Optional[str] = None) -> Tuple[List[Tuple], str, List[str]]:
     """Decide which external fetchers to run for the given query.
     Returns (fetchers, prompt_key, picked_ids)
     where fetchers is a list of (callable, args_dict).
     """
+    # Local import to avoid static resolver issues in some environments
+    try:
+        from routers.pipelines.uv import fetch_uv_data  # type: ignore
+    except Exception:
+        fetch_uv_data = None  # type: ignore
     picked_defs = select_pipelines(query)
     picked_ids = [p.id for p in picked_defs]
 
@@ -224,21 +210,31 @@ async def plan_fetchers(query: str, body_lat: Optional[float] = None, body_lon: 
     lat = body_lat
     lon = body_lon
     source = "body" if (lat is not None and lon is not None) else None
+    extracted_region: Optional[str] = None
     if source == "body":
         logger.info("Planner using body coords lat=%s lon=%s", lat, lon)
-    # If body missing, try region extraction + geocode
+    # If body missing, try explicit body_region then region extraction + geocode
     if lat is None or lon is None:
-        try:
-            raw = run_chain(_region_extraction_prompt(), {"q": query})
-            obj = json.loads(raw)
-            region = obj.get("region") if isinstance(obj, dict) else None
-            if isinstance(region, str) and region.strip():
-                lat_g, lon_g = await _geocode_region(region)
-                if lat_g is not None and lon_g is not None:
-                    lat, lon = lat_g, lon_g
-                    source = f"geocode:{region}"
-        except Exception:
-            pass
+        # Prefer body_region if present
+        if body_region and isinstance(body_region, str) and body_region.strip():
+            extracted_region = body_region.strip()
+            lat_g, lon_g = await _geocode_region(body_region)
+            if lat_g is not None and lon_g is not None:
+                lat, lon = lat_g, lon_g
+                source = f"geocode:{body_region}"
+        if lat is None or lon is None:
+            try:
+                raw = run_chain(_region_extraction_prompt(), {"q": query})
+                obj = json.loads(raw)
+                region = obj.get("region") if isinstance(obj, dict) else None
+                if isinstance(region, str) and region.strip():
+                    extracted_region = region.strip()
+                    lat_g, lon_g = await _geocode_region(region)
+                    if lat_g is not None and lon_g is not None:
+                        lat, lon = lat_g, lon_g
+                        source = f"geocode:{region}"
+            except Exception:
+                pass
     # If still missing, try LLM coord extraction
     if lat is None or lon is None:
         try:
@@ -283,10 +279,23 @@ async def plan_fetchers(query: str, body_lat: Optional[float] = None, body_lon: 
             if key not in added:
                 fetchers.append((fetch_weather_data, {"lat": float(lat), "lon": float(lon)}))
                 added.add(key)
-        elif p.id == "soil_advice" and lat is not None and lon is not None:
-            key = ("soil", float(lat), float(lon))
+        elif p.id == "soil_advice":
+            # Always extract city/state using LLM
+            city_hint: Optional[str] = None
+            state_hint: Optional[str] = None
+            try:
+                raw = run_chain(_soil_city_state_prompt(), {"q": query})
+                obj = json.loads(raw)
+                if isinstance(obj, dict):
+                    c = obj.get("city")
+                    s = obj.get("state")
+                    city_hint = c.title() if isinstance(c, str) and c else None
+                    state_hint = s.title() if isinstance(s, str) and s else None
+            except Exception:
+                pass
+            key = ("soil", state_hint or "", city_hint or "")
             if key not in added:
-                fetchers.append((fetch_soil_data, {"lat": float(lat), "lon": float(lon)}))
+                fetchers.append((fetch_soil_data, {"state": state_hint, "district": city_hint, "limit": 10, "offset": 0}))
                 added.add(key)
         elif p.id == "uv_advice" and lat is not None and lon is not None:
             key = ("uv", float(lat), float(lon))
@@ -301,14 +310,27 @@ async def plan_fetchers(query: str, body_lat: Optional[float] = None, body_lon: 
         if ("weather", float(lat), float(lon)) not in added:
             fetchers.append((fetch_weather_data, {"lat": float(lat), "lon": float(lon)}))
             added.add(("weather", float(lat), float(lon)))
-        if ("soil", float(lat), float(lon)) not in added:
-            fetchers.append((fetch_soil_data, {"lat": float(lat), "lon": float(lon)}))
-            added.add(("soil", float(lat), float(lon)))
+        if not any(f is fetch_soil_data for f, _ in fetchers):
+            # Try to derive coarse state/district for irrigation too
+            state_hint = None
+            district_hint = None
+            region_src = extracted_region or (body_region if isinstance(body_region, str) else None)
+            if isinstance(region_src, str) and "," in region_src:
+                parts = [s.strip() for s in region_src.split(",") if s.strip()]
+                if len(parts) >= 2:
+                    district_hint = parts[0].title()
+                    state_hint = parts[1].title()
+            fetchers.append((fetch_soil_data, {"state": state_hint, "district": district_hint, "limit": 10, "offset": 0}))
+            added.add(("soil", state_hint or "", district_hint or ""))
 
     if not fetchers:
         logger.warning("Planner: no fetchers added (coords missing=%s or pipelines only-doc)", lat is None or lon is None)
 
-    # Prompt key: irrigation for weather/soil; otherwise from first picked
+    # Prompt key: prefer irrigation if irrigation pipeline is selected or both weather+soil are needed; otherwise from first picked weather/soil
+    has_weather = "weather_advice" in picked_ids
+    has_soil = "soil_advice" in picked_ids
     prompt_key = next((p.prompt_key for p in picked_defs if p.id in ("weather_advice", "soil_advice")), picked_defs[0].prompt_key)
+    if ("irrigation_advice" in picked_ids) or (has_weather and has_soil):
+        prompt_key = "irrigation"
     logger.info("Planner picked=%s prompt_key=%s fetchers=%d", ",".join(picked_ids), prompt_key, len(fetchers))
     return fetchers, prompt_key, picked_ids
